@@ -27,7 +27,7 @@ ctx.register_state_provider("in_test_scope", new State({
         console.log("Warning: TestScope failed. Returning 0.");
         return 0;
     }
-}))
+}));
 
 ctx
 .set_state("initial")

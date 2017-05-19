@@ -1,6 +1,8 @@
 const beautify_code = require('js-beautify').js_beautify;
 
+import AbortExecution from "./abort_execution.js";
 import State from "./state.js";
+import Placeholder from "./placeholder.js";
 
 export default class Context {
     constructor() {
@@ -12,7 +14,13 @@ export default class Context {
         this.fn = null;
         this.constants = [];
         this.scopes = [];
+        this.placeholders = [];
         this.state_providers = {};
+        this.exceptions = {
+            AbortExecution: AbortExecution
+        };
+
+        this.exec = null;
     }
 
     prepare() {
@@ -20,8 +28,20 @@ export default class Context {
     }
     
     async execute() {
-        const ret = await this.fn();
-        return ret;
+        this.exec = {
+            vars: {}
+        };
+
+        try {
+            const ret = await this.fn();
+            return ret;
+        } catch(e) {
+            if(e instanceof AbortExecution) {
+                return e.return_value;
+            } else {
+                throw e;
+            }
+        }
     }
 
     get_code() {
@@ -73,8 +93,30 @@ export default class Context {
     }
 
     with(scope_provider) {
-        let sid = this._get_id_by_name(this.scopes, scope_provider);
-        this.code += `scope = this.scopes[${sid}];`;
+        if(scope_provider instanceof Placeholder) {
+            let id = this._get_id_by_name(this.placeholders, scope_provider);
+            this.code += `scope = this.placeholders[${id}].value;`;
+        } else {
+            let sid = this._get_id_by_name(this.scopes, scope_provider);
+            this.code += `scope = this.scopes[${sid}];`;
+        }
+        return this;
+    }
+
+    with_it() {
+        this.code += `scope = ret;`;
+        return this;
+    }
+
+    assign(name) {
+        let cid = this._get_id_by_name(this.constants, name);
+        this.code += `this.exec.vars[this.constants[${cid}]] = ret;`;
+        return this;
+    }
+
+    load(name) {
+        let cid = this._get_id_by_name(this.constants, name);
+        this.code += `ret = this.exec.vars[this.constants[${cid}]];`;
         return this;
     }
 
@@ -84,6 +126,11 @@ export default class Context {
             () => scope.get(this.constants[${cid}]),
             state
         );`;
+        return this;
+    }
+
+    end() {
+        this.code += `throw new this.exceptions.AbortExecution(ret);`;
         return this;
     }
 }
